@@ -3,15 +3,12 @@
 
 from ykdl.util.html import get_content
 from ykdl.util.match import match1, matchall
-from ykdl.compact import compact_bytes
 
-import hashlib
-import json
+from .bilibase import BiliBase, sign_api_url
 
-from .bilibase import BiliBase
 
-appkey='f3bb208b3d081dc8'
-SECRETKEY_MINILOADER = '1c15888dc316e05a15fdd0a02ed6584f'
+SECRETKEY = '1c15888dc316e05a15fdd0a02ed6584f'
+api_url = 'https://interface.bilibili.com/v2/playurl'
 
 class BiliVideo(BiliBase):
     name = u'哔哩哔哩 (Bilibili)'
@@ -20,7 +17,10 @@ class BiliVideo(BiliBase):
         if "#page=" in self.url:
             page_index = match1(self.url, '#page=(\d+)')
             av_id = match1(self.url, '\/(av\d+)')
-            self.url = 'http://www.bilibili.com/{}/index_{}.html'.format(av_id, page_index)
+            self.url = 'https://www.bilibili.com/{}/index_{}.html'.format(av_id, page_index)
+        if "aid=" in self.url:
+            av_id = match1(self.url, 'aid=(\d+)')
+            self.url = 'https://www.bilibili.com/video/av' + av_id
         if not self.vid:
             html = get_content(self.url)
             vid = match1(html, 'cid=(\d+)', 'cid=\"(\d+)')
@@ -28,14 +28,14 @@ class BiliVideo(BiliBase):
 
         return vid, title
 
-    def get_api_url(self, q):
-        sign_this = hashlib.md5(compact_bytes('cid={}&from=miniplay&player=1&quality={}{}'.format(self.vid, q, SECRETKEY_MINILOADER), 'utf-8')).hexdigest()
-        return 'http://interface.bilibili.com/playurl?cid={}&player=1&quality={}&from=miniplay&sign={}'.format(self.vid, q, sign_this)
+    def get_api_url(self, qn):
+        params_str = 'cid={}&player=1&qn={}'.format(self.vid, qn)
+        return sign_api_url(api_url, params_str, SECRETKEY)
 
     def prepare_list(self):
         html = get_content(self.url)
         video_list = matchall(html, ['<option value=\'([^\']*)\''])
         if video_list:
-            return ['http://www.bilibili.com'+v for v in video_list]
+            return ['https://www.bilibili.com'+v for v in video_list]
 
 site = BiliVideo()
