@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from ykdl.util.html import get_location, get_content
-from ykdl.util.match import match1
+from ykdl.util.match import match1, matchall
 from ykdl.compact import compact_bytes, urlencode
 
 import json
@@ -10,8 +10,9 @@ import json
 from .bilibase import BiliBase, sign_api_url
 
 
-SECRETKEY = '9b288147e5474dd2aa67085f716c560d'
-api_url = 'https://bangumi.bilibili.com/player/web_api/playurl'
+APPKEY = '84956560bc028eb7'
+SECRETKEY = '94aba54af9065f71de72f5508f1cd42e'
+api_url = 'https://bangumi.bilibili.com/player/web_api/v2/playurl'
 
 class BiliBan(BiliBase):
     name = u'哔哩哔哩 番剧 (Bilibili Bangumi)'
@@ -20,27 +21,20 @@ class BiliBan(BiliBase):
 
         html = get_content(self.url)
         title = match1(html, '<h1 title="([^"]+)', '<title>([^<]+)').strip()
-
-        eid = match1(self.url, 'anime/v/(\d+)', 'play#(\d+)', 'ep(\d+)', '\d#(\d+)') or match1(html, 'anime/v/(\d+)')
-        if eid:
-            Episode_info = json.loads(get_content('http://bangumi.bilibili.com/web_api/episode/{}.json'.format(eid)))['result']
-            vid = Episode_info['currentEpisode']['danmaku']
-            title = Episode_info['season']['title'] + ' ' + Episode_info['currentEpisode']['indexTitle'] + '.  ' + Episode_info['currentEpisode']['longTitle']
-        else:
-            vid = match1(html, 'cid=(\d+)', 'cid=\"(\d+)', '\"cid\":(\d+)')
+        vid = match1(html, '"loaded":true[^\{]+?"cid":(\d+)', '"cid":(\d+)', 'cid=(\d+)', 'cid="(\d+)')
+        self.seasonType = match1(html, '"season_type":(\d+)', '"ssType":(\d+)')
 
         return vid, title
 
     def get_api_url(self, qn):
-        params_str = 'cid={}&module=bangumi&player=1&qn={}'.format(self.vid, qn)
+        params_str = 'appkey={}&cid={}&module=bangumi&player=1&qn={}&season_type={}'.format(APPKEY, self.vid, qn, self.seasonType)
         return sign_api_url(api_url, params_str, SECRETKEY)
 
     def prepare_list(self):
         html = get_content(self.url)
-        sid = match1(html, 'var season_id = "(\d+)";') or match1(self.url, "anime/(\d+)")
-        j_ = get_content("https://bangumi.bilibili.com/jsonp/seasoninfo/{}.ver?callback=seasonListCallback".format(sid))[19:-2]
-        s_data = json.loads(j_)
-        urls = [e['webplay_url'] for e in sorted(s_data['result']['episodes'], key=lambda e: int(e['index']))]
-        return urls
+        eplist = match1(html, '"epList":(\[.+?\])')
+        if eplist:
+            eplist = matchall(eplist, [',"id":(\d+),'])
+            return ['https://www.bilibili.com/bangumi/play/ep{}'.format(eid) for eid in eplist]
 
 site = BiliBan()

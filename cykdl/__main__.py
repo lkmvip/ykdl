@@ -22,8 +22,9 @@ import logging
 logger = logging.getLogger("YKDL")
 
 from ykdl.common import url_to_module
-from ykdl.compact import ProxyHandler, build_opener, install_opener, compact_str
+from ykdl.compact import ProxyHandler, build_opener, install_opener, compact_str, urlparse
 from ykdl.util import log
+from ykdl.util.html import default_proxy_handler
 from ykdl.util.wrap import launch_player, launch_ffmpeg, launch_ffmpeg_download
 from ykdl.util.m3u8_wrap import load_m3u8
 from ykdl.util.download import save_urls
@@ -63,12 +64,17 @@ def download(urls, name, ext, live = False):
     # for live video, always use ffmpeg to rebuild timeline.
     if live:
         m3u8_internal = False
-    # change m3u8 ext to mp4
-    # rebuild urls when use internal downloader
+    # rebuild m3u8 urls when use internal downloader,
+    # change the ext to segment's ext, default is "ts",
+    # otherwise change the ext to "mp4".
     if ext == 'm3u8':
-        ext = 'mp4'
         if m3u8_internal:
             urls = load_m3u8(urls[0])
+            ext = urlparse(urls[0])[2].split('.')[-1]
+            if ext not in ['ts', 'm4s', 'mp4']:
+                ext = 'ts'
+        else:
+            ext = 'mp4'
 
     # OK check m3u8_internal
     if not m3u8_internal:
@@ -111,10 +117,17 @@ def handle_videoinfo(info, index=0):
 
     ext = info.streams[stream_id]['container']
     live = info.live
+    if info.extra['rangefetch']:
+        info.extra['rangefetch']['down_rate'] = info.extra['rangefetch']['video_rate'][stream_id]
+    if args.proxy != 'none':
+        proxy = 'http://' + args.proxy
+        info.extra['proxy'] = proxy
+        if info.extra['rangefetch']:
+            info.extra['rangefetch']['proxy'] = proxy
     player_args = info.extra
     player_args['title'] = info.title
     if args.player:
-        launch_player(args.player, urls, **player_args)
+        launch_player(args.player, urls, ext, **player_args)
     else:
         download(urls, name, ext, live)
 
@@ -130,6 +143,7 @@ def main():
 
     if args.proxy == 'system':
         proxy_handler = ProxyHandler()
+        args.proxy = os.environ.get('HTTP_PROXY', 'none')
     else:
         proxy_handler = ProxyHandler({
             'http': args.proxy,
@@ -138,6 +152,7 @@ def main():
     if not args.proxy == 'none':
         opener = build_opener(proxy_handler)
         install_opener(opener)
+        default_proxy_handler[:] = [proxy_handler]
 
     #mkdir and cd to output dir
     if not args.output_dir == '.':
